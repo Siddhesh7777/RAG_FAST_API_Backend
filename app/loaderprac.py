@@ -1,5 +1,5 @@
 import sys
-from loader import load_pdf
+from app.loader import load_pdf
 
 pages = load_pdf("data/AI_Similarity_Search_and_RAG_Concept_Map.pdf")
 print("Number of pages:", len(pages))

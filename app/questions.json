@@ -1,0 +1,90 @@
+[
+  {
+    "question": "What are the three paradigms of RAG?",
+    "keywords": ["Naive RAG", "Advanced RAG", "Modular RAG"]
+  },
+  {
+    "question": "What problem does RAG solve for LLMs?",
+    "keywords": ["hallucination", "outdated knowledge"]
+  },
+  {
+    "question": "What are the three steps in the Naive RAG process?",
+    "keywords": ["Indexing", "Retrieval", "Generation"]
+  },
+  {
+    "question": "What are the two optimization strategies used in Advanced RAG to improve retrieval quality?",
+    "keywords": ["pre-retrieval", "post-retrieval"]
+  },
+  {
+    "question": "What are the main methods used in the post-retrieval process?",
+    "keywords": ["rerank", "context compressing"]
+  },
+  {
+    "question": "What are the three augmentation stages of RAG shown in the technology tree?",
+    "keywords": ["pre-training", "fine-tuning", "inference"]
+  },
+  {
+    "question": "What are the two dimensions used to compare RAG, Fine-tuning, and Prompt Engineering in the quadrant chart?",
+    "keywords": ["External Knowledge Required", "Model Adaptation Required"]
+  },
+  {
+    "question": "What are the three main types of retrieval data sources discussed in the survey?",
+    "keywords": ["Unstructured Data", "Semi-structured data", "Structured data"]
+  },
+  {
+    "question": "What retrieval granularity unit was proposed by DenseX?",
+    "keywords": ["propositions"]
+  },
+  {
+    "question": "How does the Small2Big chunking method work?",
+    "keywords": ["sentences", "preceding and following sentences"]
+  },
+  {
+    "question": "What is Reverse HyDE?",
+    "keywords": ["hypothetical questions"]
+  },
+  {
+    "question": "What does HyDE stand for and how does it work in query transformation?",
+    "keywords": ["hypothetical document embeddings", "hypothetical documents"]
+  },
+  {
+    "question": "What issue occurs when overly long contexts cause an LLM to focus only on the beginning and end while forgetting the middle?",
+    "keywords": ["Lost in the middle"]
+  },
+  {
+    "question": "Which compression methods use small language models to detect and remove unimportant tokens from prompts?",
+    "keywords": ["LLMLingua", "LongLLMLingua"]
+  },
+  {
+    "question": "Besides single (once) retrieval, what are the three types of retrieval augmentation processes in RAG?",
+    "keywords": ["Iterative", "Recursive", "Adaptive"]
+  },
+  {
+    "question": "What two types of reflection tokens does Self-RAG introduce?",
+    "keywords": ["retrieve", "critic"]
+  },
+  {
+    "question": "What are the three primary quality scores used to evaluate RAG models?",
+    "keywords": ["Context Relevance", "Answer Faithfulness", "Answer Relevance"]
+  },
+  {
+    "question": "What are the four required abilities evaluated in RAG models?",
+    "keywords": ["Noise Robustness", "Negative Rejection", "Information Integration", "Counterfactual Robustness"]
+  },
+  {
+    "question": "Which automated tools use LLMs to evaluate RAG quality scores?",
+    "keywords": ["RAGAS", "ARES", "TruLens"]
+  },
+  {
+    "question": "Which benchmarks focus on evaluating the essential abilities of RAG models?",
+    "keywords": ["RGB", "RECALL", "CRUD"]
+  },
+  {
+    "question": "What are the three specialization directions in the development of the RAG ecosystem?",
+    "keywords": ["Customization", "Simplification", "Specialization"]
+  },
+  {
+    "question": "What multimodal domains has RAG expanded into beyond text?",
+    "keywords": ["Image", "Audio", "Video", "Code"]
+  }
+]

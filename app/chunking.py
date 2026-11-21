@@ -1,4 +1,4 @@
-from loader import load_pdf
+from app.loader import load_pdf
 from chunk import chunk_pages
 
 pages = load_pdf("data/AI_Similarity_Search_and_RAG_Concept_Map.pdf")

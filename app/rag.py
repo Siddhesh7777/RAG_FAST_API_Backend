@@ -1,9 +1,7 @@
-import os
-
 from langchain_google_genai import ChatGoogleGenerativeAI
-from app.store import search
 from dotenv import load_dotenv
 from app.config import settings
+from app.hybrid import hybrid_search
 
 load_dotenv()
 
@@ -46,7 +44,7 @@ def build_context(docs):
 
 
 def answer(thread_id, question):
-    docs = search(thread_id, question, k=4)
+    docs = hybrid_search(thread_id, question, k=settings.retriever_k)
     if not docs:
         return "No documents found for this conversation. Please upload a PDF.", []
 
