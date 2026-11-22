@@ -1,0 +1,15 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+sentence-transformers
+fastapi
+uvicorn
+python-multipart
+pypdf
+langchain-text-splitters
+langchain-huggingface
+langchain-chroma
+langchain-google-genai
+langgraph
+langgraph-checkpoint-sqlite
+pydantic-settings
+rank-bm25

@@ -1,0 +1,12 @@
+.venv
+.git
+.env
+__pycache__
+chroma_db
+*.db
+*.db-shm
+*.db-wal
+data
+evaluation
+tests
+.pytest_cache
