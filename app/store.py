@@ -34,5 +34,7 @@ def add_chunk(chunks, thread_id, file_name):
 
 
 def search(thread_id, query, k=4):
-    result = store.similarity_search(query, filter={"thread_id": thread_id}, k=k)
+    # result = store.similarity_search(query, filter={"thread_id": thread_id}, k=k)
+    result = store.similarity_search(query, k=k)
+
     return result
