@@ -1,0 +1,16 @@
+[
+  {
+    "question": "What is the salary band for level L4?",
+    "keywords": [
+      "L4 22 35"
+    ],
+    "visibility": "hr_only"
+  },
+  {
+    "question": "What is the annual bonus target for L5 and L6?",
+    "keywords": [
+      "L5 and L6: 20%"
+    ],
+    "visibility": "hr_only"
+  }
+]

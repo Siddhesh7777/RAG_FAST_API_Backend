@@ -1,0 +1,92 @@
+[
+  {
+    "file": "leave_policy.pdf",
+    "doc_id": "HR-POL-001",
+    "title": "Leave Policy",
+    "department": "HR",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "3.2",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "remote_work_policy.pdf",
+    "doc_id": "HR-POL-002",
+    "title": "Remote and Hybrid Work Policy",
+    "department": "HR",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "2.0",
+    "effective_date": "2026-07-01"
+  },
+  {
+    "file": "expense_travel_policy.pdf",
+    "doc_id": "FIN-POL-010",
+    "title": "Expense and Travel Policy",
+    "department": "Finance",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "4.1",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "information_security_policy.pdf",
+    "doc_id": "IT-SEC-003",
+    "title": "Information Security Policy",
+    "department": "IT",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "5.0",
+    "effective_date": "2026-01-01"
+  },
+  {
+    "file": "onboarding_probation_policy.pdf",
+    "doc_id": "HR-POL-004",
+    "title": "Onboarding and Probation Policy",
+    "department": "HR",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "1.5",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "benefits_guide.pdf",
+    "doc_id": "HR-POL-005",
+    "title": "Benefits Guide",
+    "department": "HR",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "2.3",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "code_of_conduct_grievance.pdf",
+    "doc_id": "HR-POL-006",
+    "title": "Code of Conduct and Grievance Procedure",
+    "department": "HR",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "3.0",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "it_helpdesk_access.pdf",
+    "doc_id": "IT-SUP-001",
+    "title": "IT Helpdesk and Access Requests",
+    "department": "IT",
+    "visibility": "all",
+    "classification": "Internal",
+    "version": "2.1",
+    "effective_date": "2026-04-01"
+  },
+  {
+    "file": "compensation_bands_HR_ONLY.pdf",
+    "doc_id": "HR-CONF-001",
+    "title": "Compensation Bands (HR leadership only)",
+    "department": "HR",
+    "visibility": "hr_only",
+    "classification": "Restricted",
+    "version": "1.0",
+    "effective_date": "2026-04-01"
+  }
+]

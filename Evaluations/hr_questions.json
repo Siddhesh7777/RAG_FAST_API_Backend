@@ -1,0 +1,134 @@
+[
+  {
+    "question": "How many days of privilege leave do I get each year?",
+    "keywords": [
+      "18 days"
+    ]
+  },
+  {
+    "question": "When do I need a medical certificate for sick leave?",
+    "keywords": [
+      "3 consecutive days"
+    ]
+  },
+  {
+    "question": "Which form do I need for extended leave of more than 30 days?",
+    "keywords": [
+      "HR-12"
+    ]
+  },
+  {
+    "question": "How do I encash my unused leave?",
+    "keywords": [
+      "HR-15"
+    ]
+  },
+  {
+    "question": "How many days a week do I work from the office?",
+    "keywords": [
+      "3 days per week"
+    ]
+  },
+  {
+    "question": "Which form is required to work fully remote?",
+    "keywords": [
+      "HR-21"
+    ]
+  },
+  {
+    "question": "How much is the home office stipend?",
+    "keywords": [
+      "15,000"
+    ]
+  },
+  {
+    "question": "Which VPN client do I need on public Wi-Fi?",
+    "keywords": [
+      "KestrelConnect"
+    ]
+  },
+  {
+    "question": "What is the minimum password length?",
+    "keywords": [
+      "14 characters"
+    ]
+  },
+  {
+    "question": "How quickly must I report a lost laptop?",
+    "keywords": [
+      "within 2 hours"
+    ]
+  },
+  {
+    "question": "Who approves USB storage exceptions and with which form?",
+    "keywords": [
+      "IT-09"
+    ]
+  },
+  {
+    "question": "How much hotel cost can I claim per night in Pune?",
+    "keywords": [
+      "7,000"
+    ]
+  },
+  {
+    "question": "Who approves expense claims above INR 1,00,000?",
+    "keywords": [
+      "CFO"
+    ]
+  },
+  {
+    "question": "Within how many days must I submit an expense claim?",
+    "keywords": [
+      "within 30 days"
+    ]
+  },
+  {
+    "question": "How long is the probation period?",
+    "keywords": [
+      "6 months"
+    ]
+  },
+  {
+    "question": "What is the notice period after confirmation for level L5?",
+    "keywords": [
+      "90 days"
+    ]
+  },
+  {
+    "question": "How many weeks of maternity leave do I get?",
+    "keywords": [
+      "26 weeks"
+    ]
+  },
+  {
+    "question": "What is the sum insured in my health insurance?",
+    "keywords": [
+      "5,00,000"
+    ]
+  },
+  {
+    "question": "What are the three levels of grievance escalation?",
+    "keywords": [
+      "Ethics Committee"
+    ]
+  },
+  {
+    "question": "How fast does a P1 incident get a response?",
+    "keywords": [
+      "15 minutes"
+    ]
+  },
+  {
+    "question": "How do I request new software?",
+    "keywords": [
+      "REQ-SW"
+    ]
+  },
+  {
+    "question": "What is the annual learning budget?",
+    "keywords": [
+      "30,000"
+    ]
+  }
+]
