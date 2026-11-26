@@ -1,0 +1,75 @@
+TERMINAL: python -m app.injest_kb knowledge [--force] [--prune]
+                                 │
+                                 ▼
+                    if __name__ == "__main__":
+                                 │
+                                 ▼
+                             ┌───────┐
+                             │ main()│
+                             └───────┘
+                                 │
+        ┌────────────────────────┴────────────────────────┐
+        ▼                                                 ▼
+ [1. WHERE TO CHECK]                            [2. HOW MANY FILES]
+ argparse parses CLI args                       Reads <folder>/manifest.json
+  • folder = Path("knowledge")                   • Loads list of N entries
+  • force  = False (unless --force)              • Starts: for entry in manifest
+  • prune  = False (unless --prune)
+                                                          │
+                       ┌──────────────────────────────────┘
+                       ▼
+           ┌───────────────────────────┐   Exception    ┌──────────────────┐
+           │ ingest_one(folder, entry, │───────────────▶│  except block:   │
+           │            args.force)    │                │  status="FAILED" │
+           └───────────────────────────┘                │  (loop continues)│
+                       │                                └──────────────────┘
+       ┌───────────────┴───────────────┐
+       ▼                               ▼
+┌─────────────────────┐    ┌────────────────────────────┐
+│ fingerprint(path,   │    │ existing_fingerprint(      │
+│             entry)  │    │     entry["doc_id"])       │
+│  • PDF raw bytes    │    │  • Queries ChromaDB store  │
+│  • sorted entry JSON│    │  • Returns old hash / None │
+│  • chunk settings   │    └────────────────────────────┘
+│  -> returns `fp`    │                │
+└─────────────────────┘                │
+       │                               │
+       └──────────────┬────────────────┘
+                      ▼
+             ┌─────────────────┐
+             │ fp == old  AND  │
+             │   not force ?   │
+             └─────────────────┘
+               /             \
+            YES               NO (New / Edited / --force)
+            /                   \
+           ▼                     ▼
+   return "skipped"     [3. HOW TO GENERATE]
+                        1. Delete old chunks for doc_id (if updating)
+                        2. Load PDF -> split into chunks
+                        3. Embed chunks -> save to ChromaDB `store`
+                           with metadata (doc_id, scope="company", fp)
+                        4. return "ingested" / "updated"
+                                 │
+                                 ▼
+                  (Repeats for all N entries in manifest)
+                                 │
+                                 ▼
+                      ┌─────────────────────┐
+                      │   if args.prune ?   │
+                      └─────────────────────┘
+                        /                 \
+                      NO                  YES
+                      /                     \
+                     │                       ▼
+                     │        ┌─────────────────────────────┐
+                     │        │ prune(manifest_ids_set)     │
+                     │        │  • store.get(scope="company")│
+                     │        │  • stale = db_ids - manifest │
+                     │        │  • store.delete(doc_id)     │
+                     │        │  • returns sorted(stale)    │
+                     │        └─────────────────────────────┘
+                     │                       │
+                     └───────────┬───────────┘
+                                 ▼
+                    Print final `summary: counts`

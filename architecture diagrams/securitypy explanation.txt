@@ -1,0 +1,84 @@
+Trace one user (`username = "siddhesh"`, `password = "cat123"`) from account creation all the way to sending a protected question to your FastAPI RAG backend.
+
+1. **Signup: Hash and Store the Password:** Runs once at account creation via hash_password().
+Your backend never saves `"cat123"` directly. It runs `hash_password("cat123")`:
+
+```python
+salt   = os.urandom(16)                                  # b"\x9a\x01\xf3..." (16 raw bytes)
+digest = hashlib.scrypt(b"cat123", salt=salt, **_SCRYPT) # b"\x4f\x8c\x22..." (64 raw bytes)
+
+salt_b64   = base64.b64encode(salt).decode()             # "mgHz..." (safe str)
+digest_b64 = base64.b64encode(digest).decode()           # "T4wi..." (safe str)
+
+stored = f"scrypt${salt_b64}${digest_b64}"               # "scrypt$mgHz...$T4wi..."
+
+```
+
+Your database saves `username = "siddhesh"` and `password_hash = "scrypt$mgHz...$T4wi..."`. The original `"cat123"` is discarded immediately.
+
+
+2. **Login: Verify the Typed Password:** Runs at login via verify_password().
+Later, the user types `"cat123"` to log in. FastAPI fetches `stored` from the database and runs `verify_password("cat123", stored)`:
+
+```python
+scheme, salt_b64, digest_b64 = stored.split("$")         # "scrypt", "mgHz...", "T4wi..."
+
+salt     = base64.b64decode(salt_b64)                    # b"\x9a\x01\xf3..." (original raw bytes)
+expected = base64.b64decode(digest_b64)                  # b"\x4f\x8c\x22..." (original raw bytes)
+
+candidate = hashlib.scrypt(b"cat123", salt=salt, **_SCRYPT)  # b"\x4f\x8c\x22..." (raw bytes)
+
+hmac.compare_digest(candidate, expected)                 # True (exact byte-for-byte match)
+
+```
+
+If the user typed `"wrong999"`, `candidate` would be completely different bytes (`b"\x11\xfe\x77..."`), `compare_digest` would return `False`, and FastAPI would reject the login with HTTP `401`.
+
+
+3. **Issue a 60-Minute JWT Badge:** Runs immediately after verify_password() returns True.
+Now that the password is confirmed, FastAPI calls `create_token("siddhesh")` so the user does not have to send their password on every message:
+
+```python
+now = int(time.time())                                   # e.g., 1764092760
+payload = {
+    "sub": "siddhesh",                                   # who owns the token
+    "iat": now,                                          # issued at
+    "exp": now + 3600,                                   # expires in 60 minutes
+}
+
+token = jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
+# -> "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJzaWRkaGVzaCIs..."
+
+```
+
+FastAPI sends this `token` string back to your Streamlit frontend, which holds onto it in session state.
+
+
+4. **Protected API Call: Verify the Token:** Runs on every /chat or /upload request via decode_token().
+When the user asks your RAG bot a question, Streamlit attaches `Authorization: Bearer eyJhbGci...` to the HTTP header. FastAPI calls `decode_token(token)`:
+
+```python
+payload = jwt.decode(
+    token,
+    settings.jwt_secret,
+    algorithms=["HS256"],                                # blocks unsigned "alg: none" attacks
+)
+username = payload.get("sub")                            # "siddhesh"
+
+```
+
+`jwt.decode()` automatically verifies the `HS256` signature against `settings.jwt_secret` and checks that `exp` has not passed. It returns `"siddhesh"`, so FastAPI loads only Siddhesh's chat threads and role permissions.
+
+
+---
+
+### End-to-End Function Reference
+
+| Stage | Function Called | Input | Output | What Happens on Failure |
+| --- | --- | --- | --- | --- |
+| **Signup** | `hash_password()` | `"cat123"` | `"scrypt$mgHz...$T4wi..."` | N/A (creates fresh random salt every call) |
+| **Login (check)** | `verify_password()` | `"cat123"`, stored string | `True` or `False` | Returns `False` on wrong password or malformed string (never crashes) |
+| **Login (badge)** | `create_token()` | `"siddhesh"`, `minutes=60` | Signed JWT string | Not called if `verify_password()` returned `False` |
+| **Every API call** | `decode_token()` | JWT string from header | `"siddhesh"` | Raises `ExpiredSignatureError` (after 60 min) or `InvalidTokenError` (if tampered or missing `"sub"`) |
+
+`scrypt` and `base64` only touch the database at signup and login; once the JWT is issued, `HS256` handles every chat request in microseconds without ever re-reading the password hash.

@@ -15,6 +15,7 @@ import time
 from dotenv import load_dotenv
 from app.config import settings
 from app.logging_setup import setup_logging
+from app.auth import router as auth_router
 
 load_dotenv()
 
@@ -24,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF Chunking API")
 
+
+app.include_router(auth_router)
 Max_mb = 20
 
 

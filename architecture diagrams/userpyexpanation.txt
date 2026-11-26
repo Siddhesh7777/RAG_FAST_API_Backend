@@ -1,0 +1,70 @@
+This module is the **user database and access-control layer** for your RAG backend—it stores accounts in SQLite, enforces password and username rules, and maps each user's role to the exact document visibility tags they are allowed to search.
+
+1. **Define Roles and Least-Privilege Rules:** Loaded once when the module is imported.
+At the top of the file, your app locks down valid roles and maps each one to allowed document visibility tags:
+
+```python
+ROLES = ("employee", "hr", "admin")
+_VISIBILITY = {
+    "employee": ["all"],
+    "hr":       ["all", "hr_only"],
+    "admin":    ["all"],
+}
+
+```
+
+No database file is created yet—these constants simply act as the single source of truth for permissions across the app.
+
+
+2. **Validate, Hash, and Save a New User:** Triggered at signup via create_user().
+Suppose your app calls `create_user("  Siddhesh ", "myPass123", role="hr", department="IT")`:
+
+1. **Fail-fast validation:** Checks `role in ROLES` and that the password is at least 8 characters. Invalid inputs immediately raise `ValueError` before touching SQLite.
+2. **Normalize username:** `username.strip().lower()` turns `"  Siddhesh "` into `"siddhesh"`.
+3. **Open DB & ensure table exists:** `_connect()` opens `settings.users_db_path` (creating the `.db` file automatically on the very first call), sets `conn.row_factory = sqlite3.Row`, and runs `CREATE TABLE IF NOT EXISTS users (...)`.
+4. **Safe transaction + cleanup:** `with closing(_connect()) as conn:` guarantees `conn.close()` at the end, while the inner `with conn:` automatically commits on success or rolls back on failure.
+5. **Parameterized insert:** Calls `hash_password("myPass123")` to generate `"scrypt$<salt>$<hash>"` and inserts all 5 fields using `?` placeholders to block SQL injection. SQLite auto-fills `id` and `active = 1`.
+6. **Duplicate protection:** If `"siddhesh"` already exists, SQLite's `UNIQUE` constraint raises `sqlite3.IntegrityError`, which is caught and converted into `ValueError("user 'siddhesh' already exists")`.
+
+
+3. **Look Up a User and Return a Dictionary:** Triggered at login and on API requests via get_user().
+When `"Siddhesh"` logs in or sends a request with a verified JWT, your app calls `get_user("Siddhesh")`:
+
+1. **Open & close cleanly:** Uses `with closing(_connect()) as conn:` (no inner `with conn:` needed because `SELECT` only reads data).
+2. **Parameterized query:** Runs `SELECT * FROM users WHERE username = ?` with the 1-item tuple `("siddhesh",)`.
+3. **Row to dict:** `.fetchone()` returns a `sqlite3.Row` (or `None`). Because `_connect()` enabled `row_factory = sqlite3.Row`, `dict(row)` cleanly converts it into a plain Python dictionary:
+
+```python
+{
+    "id": 1,
+    "username": "siddhesh",
+    "password_hash": "scrypt$mgHz...$T4wi...",
+    "role": "hr",
+    "department": "IT",
+    "active": 1,
+    "created_at": "2026-11-25T18:30:00+00:00",
+}
+
+```
+
+
+4. **Resolve Document Search Permissions:** Triggered before ChromaDB and BM25 search via visibility_for().
+Once you have `user["role"]`, your retrieval layer calls `visibility_for(user["role"])`:
+
+* `"hr"` returns `["all", "hr_only"]` (a fresh copy via `list(...)` so callers cannot accidentally mutate `_VISIBILITY`).
+* `"employee"` or `"admin"` returns `["all"]`.
+* Any unknown role returns `[]` (fail-closed—sees zero documents).
+
+That list plugs directly into `company_filter(...)` so both ChromaDB and BM25 only return chunks the user is allowed to read.
+
+
+---
+
+### Quick Map of Every Function
+
+| Function | Called When | Input | Output | Key Safety Mechanism |
+| --- | --- | --- | --- | --- |
+| `_connect()` | Inside `create_user` and `get_user` | None (reads `settings.users_db_path`) | Open `sqlite3.Connection` | `IF NOT EXISTS` safely initializes the table once; `sqlite3.Row` enables dict conversion |
+| `create_user()` | User signup / admin provisioning | `username`, `password`, `role`, `department` | None (writes row to SQLite) | `?` placeholders stop SQL injection; `hash_password()` hides plain text; `with closing` + `with conn` commits and closes |
+| `get_user()` | Login verification & per-request user lookup | `username` | User `dict` or `None` | Normalizes username (`strip().lower()`) and safely closes connection after reading |
+| `visibility_for()` | Every RAG search query | `role` string | Copy of allowed visibility `list` | Fail-closed default (`[]`) and defensive `list(...)` copy prevent accidental permission leaks |

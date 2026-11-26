@@ -1,0 +1,98 @@
+Your entire authentication and access-control system works as a **three-file pipeline**:
+
+* **`app/security.py`** — Handles cryptography (`scrypt` password hashing and `HS256` JWT creation/verification).
+* **`app/users.py`** — Handles persistence and permissions (SQLite `users` table and `visibility_for()`).
+* **`app/auth.py`** — Handles HTTP traffic (FastAPI routes, `oauth2_scheme`, and `Depends()` chains).
+
+Follow two users — **`siddhesh`** (`role="hr"`) and **`raj`** (`role="admin"`) — from the second FastAPI boots to the moment a protected request succeeds or gets blocked.
+
+1. **Boot the App and Pre-Build Auth Helpers:** Runs once when FastAPI starts.
+When FastAPI imports `app/auth.py`, three top-level objects are created once in memory before any user sends a request:
+
+```python
+router = APIRouter(prefix="/auth", tags=["auth"])
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+_DUMMY_HASH = hash_password("dummy-password-for-timing")
+
+```
+
+* All endpoints in this file are mounted under `/auth` (`/auth/login`, `/auth/me`, `/auth/admin-check`).
+* `oauth2_scheme` is ready to strip `"Bearer "` from incoming `Authorization` headers and wire up the **Authorize** button in `/docs`.
+* `_DUMMY_HASH` runs `scrypt` once and caches a fake hash so failed logins for nonexistent usernames take the same ~50ms as real ones.
+* **SQLite is not created yet** because `_connect()` has not been called.
+
+
+2. **Create Accounts and Initialize SQLite:** app/users.py + app/security.py.
+When you register your first user (`create_user("  Siddhesh ", "cat12345", role="hr", department="IT")`):
+
+1. **Validate fast:** Confirms `role` is in `("employee", "hr", "admin")` and password length is at least 8 characters.
+2. **Normalize username:** `"  Siddhesh ".strip().lower()` becomes `"siddhesh"`.
+3. **Open/create SQLite:** `_connect()` opens `settings.users_db_path` (creating the `.db` file on disk the very first time), sets `conn.row_factory = sqlite3.Row` so rows convert cleanly to dictionaries, and runs `CREATE TABLE IF NOT EXISTS users (...)`.
+4. **Hash the password:** `hash_password("cat12345")` generates 16 random bytes (`salt`), runs `hashlib.scrypt(...)` to produce raw `digest` bytes, and uses `base64.b64encode(...).decode()` to pack both into a safe database string: `"scrypt$mgHz...$T4wi..."`.
+5. **Commit and close safely:** `with closing(_connect()) as conn:` guarantees `conn.close()` runs at the end, while the inner `with conn:` commits the parameterized `INSERT` (blocking SQL injection via `?` placeholders). SQLite auto-fills `id = 1` and `active = 1`.
+
+
+3. **Log In and Issue a 60-Minute JWT:** POST /auth/login.
+`siddhesh` sends form fields `username="siddhesh"` and `password="cat12345"` to `POST /auth/login`:
+
+```python
+@router.post("/login")
+def login(form: OAuth2PasswordRequestForm = Depends()):
+    user = get_user(form.username)
+    stored = user["password_hash"] if user else _DUMMY_HASH
+    password_ok = verify_password(form.password, stored)
+
+```
+
+1. **Empty `Depends()` shortcut:** FastAPI sees the class `OAuth2PasswordRequestForm` on the left, parses the incoming form fields into `form.username` and `form.password`, and passes `form` into `login()`.
+2. **Fetch user from SQLite:** `get_user("siddhesh")` opens the existing `.db` file, runs `SELECT * FROM users WHERE username = ?`, converts the `sqlite3.Row` into a `dict`, and closes the connection.
+3. **Constant-time verification:** `verify_password("cat12345", stored)` splits `"scrypt$mgHz...$T4wi..."` on `"$"`, unwraps the original raw bytes via `base64.b64decode(...)` (no `.decode()` because `scrypt` needs raw `bytes`), re-hashes `"cat12345"` with that exact `salt`, and compares raw bytes using `hmac.compare_digest()`.
+4. **Unified gate:** `if not (user and password_ok and user["active"]):` raises a single generic **`401 Unauthorized`** (`"Incorrect username or password"`) if the user doesn't exist, the password is wrong, or the account is disabled.
+5. **Sign the JWT:** `create_token("siddhesh")` builds `{"sub": "siddhesh", "iat": now, "exp": now + 3600}` and signs it with `settings.jwt_secret` using `HS256`. FastAPI returns `{"access_token": "eyJhbGci...", "token_type": "bearer"}`.
+
+
+4. **Authenticate a Protected Request via Depends():** GET /auth/me.
+The client calls `GET /auth/me` with the header `Authorization: Bearer eyJhbGci...`. Because `me()` declares `Depends(current_user)`, FastAPI runs a **two-stage pre-flight chain** before `me()` executes:
+
+1. **`Depends(oauth2_scheme)`:** Checks that the `Authorization` header starts with `"Bearer "`, strips `"Bearer "`, and passes `"eyJhbGci..."` into `current_user(token=...)`. *(Does zero signature checking.)*
+2. **`Depends(current_user)`:**
+* Calls `decode_token(token)` with `algorithms=["HS256"]` to verify the signature, block unsigned tokens, check `exp`, and extract `"siddhesh"`.
+* Calls `get_user("siddhesh")` to load the **live** user record from SQLite (so role changes or `active = 0` take effect immediately).
+* Confirms `user` exists and `user["active"] == 1`, then hands the `user` dict to `me()`.
+
+
+3. **Endpoint runs:** `me()` returns only safe fields (never `password_hash`) plus `visibility_for("hr")` — which returns a fresh copy of `["all", "hr_only"]` to feed into `company_filter(...)` for ChromaDB and BM25.
+
+
+5. **Enforce Role-Based Access with Chained Dependencies:** GET /auth/admin-check.
+`admin_check()` declares `Depends(require_admin)`, which itself declares `Depends(current_user)`. FastAPI automatically resolves the **three-stage chain** from bottom to top:
+
+1. `oauth2_scheme` extracts the raw JWT string from the header.
+2. `current_user` verifies the JWT and loads the active user from SQLite.
+3. `require_admin` checks `if user["role"] != "admin":`.
+
+* **When `siddhesh` (`role="hr"`) calls `/auth/admin-check`:** Stages 1 and 2 pass, then Stage 3 stops the request with **`403 Forbidden`** (`"Admin only"`).
+* **When `raj` (`role="admin"`) calls `/auth/admin-check`:** All 3 stages pass, and `admin_check()` returns **`200 OK`** with `{"ok": True, "admin": "raj"}`.
+
+
+---
+
+### Where Every Failure Gets Stopped
+
+| What Went Wrong | Exact Layer That Catches It | HTTP Status & Message |
+| --- | --- | --- |
+| Missing `Authorization: Bearer ...` header | `oauth2_scheme` | `401` — `"Not authenticated"` |
+| Wrong password, unknown username, or inactive user at login | `login()` (after running `_DUMMY_HASH` if needed) | `401` — `"Incorrect username or password"` |
+| Expired, tampered, or garbage JWT | `decode_token()` caught inside `current_user()` | `401` — `"Invalid or expired token"` |
+| User deleted or set to `active = 0` in SQLite after login | `get_user()` check inside `current_user()` | `401` — `"Invalid or expired token"` |
+| Valid, active employee or HR user hits an admin route | `require_admin()` | `403` — `"Admin only"` |
+
+---
+
+### How the Three Files Map Together
+
+| File | Core Functions | Responsibility |
+| --- | --- | --- |
+| **`app/security.py`** | `hash_password`, `verify_password`, `create_token`, `decode_token` | Slow `scrypt` + `base64` for stored passwords; fast `HS256` JWTs for per-request auth |
+| **`app/users.py`** | `_connect`, `create_user`, `get_user`, `visibility_for` | SQLite storage, safe transactions (`with closing` + `with conn`), and least-privilege visibility lists |
+| **`app/auth.py`** | `oauth2_scheme`, `current_user`, `require_admin`, `/login`, `/me`, `/admin-check` | HTTP header extraction, FastAPI `Depends()` chains, timing-attack protection, and `401`/`403` responses |

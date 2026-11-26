@@ -1,9 +1,9 @@
+import re
+
 from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
-from app.store import search, store
-
-import re
+from app.store import search_where, store
 
 STOPWORDS = {
     "what",
@@ -23,6 +23,9 @@ STOPWORDS = {
     "to",
     "work",
     "works",
+    "i",
+    "my",
+    "me",
 }
 
 
@@ -31,32 +34,42 @@ def _tokens(text):
     return [w for w in words if w not in STOPWORDS]
 
 
-# this was before one
-# /def _tokens(text):
-#     return text.lower().split()
+def semantic_ranking(where, query, n):
+    return search_where(where, query, n)
 
 
-def hybrid_search(thread_id, query, k=4, pool=20):
-    vector_docs = search(thread_id, query, k=pool)
-
-    data = store.get(where={"thread_id": thread_id}, include=["documents", "metadatas"])
+def keyword_ranking(where, query, n):
+    data = store.get(where=where, include=["documents", "metadatas"])
     docs = [
         Document(page_content=text, metadata=meta)
         for text, meta in zip(data["documents"], data["metadatas"])
     ]
     if not docs:
         return []
-
     bm25 = BM25Okapi([_tokens(d.page_content) for d in docs])
     scores = bm25.get_scores(_tokens(query))
-    top_idx = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)[:pool]
-    keyword_docs = [docs[i] for i in top_idx]
+    ranked = sorted(zip(scores, docs), key=lambda pair: pair[0], reverse=True)
+    return [doc for score, doc in ranked[:n]]
 
-    fused = {}
-    for ranking in (vector_docs, keyword_docs):
+
+def combine(rankings, k):
+    points = {}
+    docs_by_text = {}
+    for ranking in rankings:
         for rank, doc in enumerate(ranking, start=1):
-            entry = fused.setdefault(doc.page_content, {"doc": doc, "score": 0.0})
-            entry["score"] += 1 / (60 + rank)
+            text = doc.page_content
+            docs_by_text[text] = doc
+            points[text] = points.get(text, 0) + 1 / (60 + rank)
+    best = sorted(points, key=points.get, reverse=True)[:k]
+    return [docs_by_text[t] for t in best]
 
-    best = sorted(fused.values(), key=lambda e: e["score"], reverse=True)
-    return [e["doc"] for e in best[:k]]
+
+def hybrid_search_where(where, query, k=4, pool=20):
+    return combine(
+        [semantic_ranking(where, query, pool), keyword_ranking(where, query, pool)],
+        k,
+    )
+
+
+def hybrid_search(thread_id, query, k=4, pool=20):
+    return hybrid_search_where({"thread_id": thread_id}, query, k, pool)

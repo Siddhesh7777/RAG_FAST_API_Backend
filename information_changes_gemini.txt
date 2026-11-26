@@ -1,0 +1,141 @@
+Here is the complete, step-by-step record of every change we made, the exact before-and-after code, and the technical reason behind each step.
+
+Step 1: Verified gemini-3.5-flash-lite API Compatibility
+
+• Action: Checked Google's Gemini API documentation for gemini-3.5-flash-lite.
+• Result: Confirmed it is an active Gemini API model supporting tool calling (rag_tool), 1M input tokens, and text/multimodal inputs—so your model name was valid and did not need to be changed.
+
+Step 2: Fixed the Startup Crash (ValidationError for Missing API Key)
+
+• Error we saw:text
+pydantic_core._pydantic_core.ValidationError: 1 validation error for ChatGoogleGenerativeAI
+  Value error, API key required for Gemini Developer API.
+Use code with caution.
+• Why it happened: When Uvicorn started, app/rag.py ran at import time. os.getenv("GOOGLE_API_KEY") returned None because .env was either not saved in the project root or not loaded properly when Uvicorn spawned its worker process.
+• Action taken: Verified .env placement and variable formatting (GOOGLE_API_KEY=...) so load_dotenv() populated os.getenv("GOOGLE_API_KEY") before ChatGoogleGenerativeAI(...) was initialized.
+
+Step 3: Changes Made in app/rag.pytouch .gitignore
+
+
+Change 3A — Removed temperature=0
+
+• Before:python
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite",
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    temperature=0,
+    max_retries=3,
+    timeout=30,
+)
+Use code with caution.
+• After:python
+llm = ChatGoogleGenerativeAI(
+    model="gemini-3.5-flash-lite",
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    max_retries=3,
+    timeout=30,
+)
+Use code with caution.
+• Why: gemini-3.5-flash-lite uses fixed sampling defaults on Google's servers and ignores temperature. Removing it eliminated the UserWarning in your console logs.
+
+Change 3B — Added extract_text() Helper Function
+
+• Code added:python
+def extract_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        )
+    return str(content)
+Use code with caution.
+• Why: Unlike older LLMs where response.content is a plain str (e.g., "The answer is 42"), Gemini 3.x models return .content as a list of content blocks (e.g., [{'type': 'text', 'text': 'The answer is 42'}], plus internal thinking or tool-call blocks). This function safely extracts and joins only the "text" values into a standard str.
+
+Change 3C — Wrapped response.content in answer()
+
+• Before:python
+return response.content, sources
+Use code with caution.
+• After:python
+return extract_text(response.content), sources
+Use code with caution.
+• Why: Guarantees answer() returns (str, list) instead of (list, list).
+
+Step 4: Changes Made in app/agent.py
+
+
+Change 4A — Cleaned Up Duplicate Import
+
+• Before:python
+from app.rag import build_context, extract_text, llm
+...
+from app.rag import build_context, llm
+Use code with caution.
+• After:python
+from app.rag import build_context, extract_text, llm
+Use code with caution.
+• Why: Removed the redundant second import line and ensured extract_text is imported cleanly.
+
+Change 4B — Normalized response.content in chat_node()
+
+• Before:python
+def chat_node(state: AgentState):
+    messages = [SystemMessage(content=AGENT_PROMPT)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    return {"messages": [response]}
+Use code with caution.
+• After:python
+def chat_node(state: AgentState):
+    messages = [SystemMessage(content=AGENT_PROMPT)] + state["messages"]
+    response = llm_with_tools.invoke(messages)
+    if response.content:
+        response.content = extract_text(response.content)
+    return {"messages": [response]}
+Use code with caution.
+• Why:
+	1. LangGraph persists response (AIMessage) into checkpoints.db (SQLite). Converting response.content from a list to a str ensures clean string history in your database.
+	2. The if response.content: check ensures we do not touch response when the model makes a tool call (rag_tool), where .content is empty and .tool_calls contains the function call.
+
+Step 5: Changes Made in app/main.py
+
+
+Change 5A — Fixed AttributeError: 'list' object has no attribute 'encode' in POST /chat
+
+• Before:python
+for chunk, meta in events:
+    if (
+        isinstance(chunk, AIMessageChunk)
+        and chunk.content
+        and meta.get("langgraph_node") == "chat"
+    ):
+        yield chunk.content
+Use code with caution.
+• After:python
+for chunk, meta in events:
+    if (
+        isinstance(chunk, AIMessageChunk)
+        and chunk.content
+        and meta.get("langgraph_node") == "chat"
+    ):
+        text = extract_text(chunk.content)
+        if text:
+            yield text
+Use code with caution.
+• Why:
+	1. Why it crashed before: With stream_mode="messages", LangGraph streams AIMessageChunk objects token-by-token while Gemini is generating (before chat_node finishes). Each chunk.content is a list. FastAPI's StreamingResponse expects str or bytes so Starlette can call chunk.encode("utf-8"). Passing a list caused AttributeError: 'list' object has no attribute 'encode'.
+	2. Why extract_text(chunk) didn't work at first: Passing the whole chunk (AIMessageChunk object) fell through to str(chunk) and streamed raw object text. Passing chunk.content extracts only the inner text blocks.
+	3. Why if text: was added: Some streamed chunks from Gemini 3.5 Flash-Lite contain only tool-call arguments or thinking metadata with no "text" key, causing extract_text(chunk.content) to return "". Skipping empty strings prevents blank frames from being sent over the stream.
+
+Summary Table
+
+
+File	What Changed	Problem It Solved
+.env	Verified GOOGLE_API_KEY loading	Fixed Pydantic ValidationError on Uvicorn startup
+app/rag.py	Removed temperature=0	Silenced unsupported sampling parameter warning
+app/rag.py	Created extract_text() & updated answer()	Converted Gemini 3.5 list content blocks into str
+app/agent.py	Normalized response.content in chat_node() & removed duplicate import	Saved clean str messages to checkpoints.db without breaking tool calls
+app/main.py	Changed yield chunk.content to text = extract_text(chunk.content); if text: yield text	Fixed AttributeError: 'list' object has no attribute 'encode' during /chat streaming
+
+If you'd like to keep a clean changelog or README note for your repo, or want to add streaming error handling / citation parsing next, let me know what you'd like to work on.

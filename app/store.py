@@ -37,3 +37,16 @@ def search(thread_id, query, k=4):
     result = store.similarity_search(query, filter={"thread_id": thread_id}, k=k)
 
     return result
+
+
+def search_where(where, query, k=4):
+    return store.similarity_search(query, k=k, filter=where)
+
+
+def company_filter(allowed_visibility):
+    return {
+        "$and": [
+            {"scope": "company"},
+            {"visibility": {"$in": list(allowed_visibility)}},
+        ]
+    }

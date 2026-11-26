@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GOOGLE_API_KEY: ci-dummy-key
+      JWT_SECRET: ci-dummysecret
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

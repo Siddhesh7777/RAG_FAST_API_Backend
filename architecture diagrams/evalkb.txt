@@ -1,0 +1,62 @@
+TERMINAL: python -m app.eval_kb <vector|hybrid|access> <questions.json> [--k 4]
+                                         │
+                                         ▼
+                            if __name__ == "__main__":
+                                         │
+                                         ▼
+                                     ┌───────┐
+                                     │ main()│
+                                     └───────┘
+                                         │
+                        argparse parses CLI arguments:
+                         • args.mode      ("vector" | "hybrid" | "access")
+                         • args.questions (path to JSON file)
+                         • args.k         (top-k chunks, default = 4)
+                                         │
+                                         ▼
+                             ┌───────────────────────┐
+                             │ args.mode == "access"?│
+                             └───────────────────────┘
+                              /                     \
+                           NO                         YES
+                   (vector / hybrid)                (access)
+                          /                             \
+                         ▼                               ▼
+          ┌──────────────────────────┐    ┌───────────────────────────────┐
+          │ run_eval(mode, path, k)  │    │ check_access(path, k)         │
+          │  • where = company_filter│    │  • Loads questions JSON       │
+          │            (EMPLOYEE)    │    │  • leaked_any = False         │
+          │  • Loads questions JSON  │    │  • Loop: for q in questions   │
+          │  • hits = 0              │    └───────────────────────────────┘
+          │  • Loop: for q in qs     │                    │
+          └──────────────────────────┘                    ▼
+                       │                   Inner Loop (tests BOTH engines):
+                       ▼                    1. ("vector",  semantic_ranking)
+            ┌─────────────────────┐         2. ("keyword", keyword_ranking)
+            │ mode == "hybrid" ?  │                       │
+            └─────────────────────┘        ┌──────────────┴──────────────┐
+              /                 \          ▼                             ▼
+           YES                   NO  [EMPLOYEE QUERY]             [HR QUERY]
+           /                      \  fn(company_filter(EMPLOYEE), fn(company_filter(HR),
+          ▼                        ▼    q["question"], k)            q["question"], k)
+  hybrid_search_where(      search_where(  │                             │
+    where, q, k)              where, q, k) ▼                             ▼
+          \                        /  ┌──────────────────┐         ┌──────────────────┐
+           └──────────┬───────────┘   │ _has(emp_docs,   │         │ _has(hr_docs,    │
+                      ▼               │      keywords)   │         │      keywords)   │
+             ┌─────────────────┐      │ -> leaked (bool) │         │ -> reachable     │
+             │ _has(docs,      │      └──────────────────┘         └──────────────────┘
+             │   q["keywords"])│              │                             │
+             └─────────────────┘              └──────────────┬──────────────┘
+               /             \                               ▼
+            TRUE            FALSE            • leaked_any = leaked_any or leaked
+             /                 \             • Print row: LEAK/ok | engine | reachable
+            ▼                   ▼                            │
+        hits += 1         Print "MISS: q"                    ▼
+            \                   /              (Repeats for all questions & engines)
+             └────────┬────────┘                             │
+                      ▼                                      ▼
+          (Repeats for all questions)            Print "ACCESS CHECK: PASSED/FAILED"
+                      │
+                      ▼
+       Print final hit_rate % (hits/total)
