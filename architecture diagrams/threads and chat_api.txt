@@ -1,0 +1,95 @@
+These two files split the work cleanly: **`app/threads.py`** manages the **list of conversations** in SQLite (who owns each chat and what its title is), while **`chat_api`** handles **HTTP requests, security checks, and streaming answers** from your LangGraph RAG agent.
+
+One key design detail to notice upfront: **SQLite (`threads` table) only stores chat metadata** (`thread_id`, `username`, `title`, `created_at`). The **actual back-and-forth messages** are stored inside **LangGraph's checkpointer**, linked by the exact same `thread_id`.
+
+Trace a logged-in user — **`siddhesh`** (`role="hr"`) — from clicking "New Chat" to reopening that conversation later.
+
+1. **Create a New Chat Thread:** POST /threads.
+The user clicks "New Chat" in the frontend.
+
+1. **Auth check (`chat_api`):** `Depends(current_user)` validates the Bearer JWT and loads `siddhesh` from SQLite.
+2. **Create row (`chat_api` → `app/threads.py:create_thread`):** `new_thread()` calls `create_thread("siddhesh")`.
+3. **Save to SQLite (`app/threads.py`):**
+* Generates a random, unguessable UUID string (`str(uuid.uuid4())`) so nobody can guess another user's chat ID.
+* `_connect()` opens `settings.users_db_path` (the same `.db` file holding `users`) and ensures the `threads` table exists.
+* Inserts `(thread_id, "siddhesh", "New chat", timestamp)` using `?` placeholders and commits via `with conn:`.
+
+
+4. **Response:** Returns `{"thread_id": "f47ac10b-...", "title": "New chat"}` to the client.
+
+
+2. **Verify the Message and Thread Ownership:** POST /chat — Request Validation and Ownership Gate.
+The user types `"What is the HR leave carry-forward policy?"` and sends it with `thread_id`.
+
+1. **Input validation (`chat_api`):** Pydantic's `ChatRequest` checks that `message` is between 1 and 4,000 characters—blocking empty prompts and giant payloads that burn Gemini quota.
+2. **Auth check (`chat_api`):** `Depends(current_user)` verifies `siddhesh`.
+3. **Ownership check (`chat_api:_owned_or_404` → `app/threads.py:get_owned_thread`):**
+* Runs `SELECT ... FROM threads WHERE thread_id = ? AND username = ?`.
+* If the thread doesn't exist **or** belongs to someone else, `get_owned_thread()` returns `None` and `_owned_or_404()` stops immediately with **`404 Thread not found`**.
+
+
+
+
+3. **Configure Permissions and Rename the Thread:** POST /chat — Server-Side RBAC and Auto-Titling.
+Once ownership is confirmed, `chat()` prepares the run before calling the AI:
+
+1. **Lock in RBAC (`chat_api` → `app/users.py:visibility_for`):** Builds LangGraph's `config` dictionary on the server:
+
+```python
+"configurable": {
+    "thread_id": req.thread_id,
+    "username": "siddhesh",
+    "visibility": ["all", "hr_only"],
+}
+
+```
+
+Because this comes from the verified database user, neither the client nor the LLM can alter what documents get searched.
+2. **Auto-title on first message (`chat_api` → `app/threads.py:set_title`):** Checks `if thread["title"] == "New chat":`. Since this is the first question, it calls `set_title(req.thread_id, req.message[:60])`, which runs `UPDATE threads SET title = ? WHERE thread_id = ?` in SQLite.
+3. **Privacy-safe logging:** Logs `user`, `thread_id`, and `question_chars` (the length of the message, never the private question text itself).
+
+
+4. **Stream the RAG Answer Word by Word:** POST /chat — StreamingResponse.
+Instead of making the user wait for the full answer, `chat()` defines an inner generator `token_stream()` and wraps it in FastAPI's `StreamingResponse(..., media_type="text/plain")`.
+
+1. **Run LangGraph:** Calls `graph.stream({"messages": [HumanMessage(content=req.message)]}, config=config, stream_mode="messages")`. LangGraph automatically saves both the question and the final answer under `thread_id` in its checkpointer.
+2. **Filter out internal noise:** As `(chunk, meta)` events arrive, `token_stream()` only keeps chunks where:
+* `isinstance(chunk, AIMessageChunk)` (it's an AI output piece),
+* `chunk.content` is non-empty, and
+* `meta.get("langgraph_node") == "chat"` (skips tool-calling and retrieval nodes).
+
+
+3. **Yield live text:** `extract_text(chunk.content)` pulls out the plain text and `yield text` sends each piece straight to the browser.
+4. **Error handling and timing:** If anything crashes mid-stream, `except Exception` logs the traceback and yields a friendly error message; `finally` always logs how many seconds the request took.
+
+
+5. **Load the User's Chat Sidebar:** GET /threads.
+When the user refreshes the page, the frontend calls `GET /threads`.
+
+1. `Depends(current_user)` verifies `siddhesh`.
+2. `my_threads()` calls `list_threads("siddhesh")` in `app/threads.py`.
+3. SQLite runs `SELECT thread_id, title, created_at FROM threads WHERE username = ? ORDER BY created_at DESC`.
+4. `.fetchall()` and `[dict(r) for r in rows]` return a list of only `siddhesh`'s chats, newest first—now displaying `"What is the HR leave carry-forward policy?"` as the title.
+
+
+6. **Reopen a Past Conversation:** GET /threads/{thread_id}/messages.
+When the user clicks an old chat in the sidebar, the frontend calls `GET /threads/{thread_id}/messages`.
+
+1. **Auth + Ownership first:** `Depends(current_user)` and `_owned_or_404(thread_id, user)` run **before** any messages are read—blocking users from reading anyone else's history.
+2. **Read from LangGraph (`_history`):** Calls `graph.get_state({"configurable": {"thread_id": thread_id}})` and pulls the saved `messages` list.
+3. **Clean the list for the UI:** Loops through every saved message:
+* `HumanMessage` becomes `{"role": "user", "content": "..."}`.
+* `AIMessage` becomes `{"role": "assistant", "content": "..."}` — but only if `extract_text(m.content).strip()` is non-empty, which filters out internal AI tool-call steps that have no visible text.
+
+
+
+
+---
+
+### Where Everything Lives
+
+| Data | Stored In | Managed By |
+| --- | --- | --- |
+| **User accounts & roles** (`username`, `password_hash`, `role`, `active`) | SQLite `users` table (`users.db`) | `app/users.py` |
+| **Chat list & ownership** (`thread_id`, `username`, `title`, `created_at`) | SQLite `threads` table (`users.db`) | `app/threads.py` |
+| **Actual chat messages** (`HumanMessage`, `AIMessage`, tool calls) | LangGraph checkpointer (keyed by `thread_id`) | `app/agent.py` + `chat_api` (`_history` / `graph.stream`) |

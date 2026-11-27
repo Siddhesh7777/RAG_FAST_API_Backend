@@ -38,8 +38,10 @@ def extract_text(content) -> str:
 def build_context(docs):
     parts = []
     for i, d in enumerate(docs, start=1):
-        label = f"[{i}] {d.metadata['filename']}, page {d.metadata['page']}"
-        parts.append(f"{label}\n{d.page_content}")
+        m = d.metadata
+        title = m.get("title") or m.get("filename", "document")
+        ref = f" ({m['doc_id']} v{m['version']})" if m.get("doc_id") else ""
+        parts.append(f"[{i}] {title}{ref}, page {m.get('page', '?')}\n{d.page_content}")
     return "\n\n".join(parts)
 
 

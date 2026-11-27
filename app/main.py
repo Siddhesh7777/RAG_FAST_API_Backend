@@ -1,6 +1,6 @@
 import os
 import tempfile
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, HTTPException, UploadFile, Depends
 from app.rag import extract_text
 
 from app.chunker import chunk_pages
@@ -15,7 +15,12 @@ import time
 from dotenv import load_dotenv
 from app.config import settings
 from app.logging_setup import setup_logging
+from app.hybrid import hybrid_search_where
+from app.store import company_filter
 from app.auth import router as auth_router
+from app.auth import require_admin
+from app.chat_api import router as chat_router
+from app.documents_api import router as documents_router
 
 load_dotenv()
 
@@ -25,8 +30,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="PDF Chunking API")
 
-
+app.include_router(chat_router)
 app.include_router(auth_router)
+app.include_router(documents_router)
+
 Max_mb = 20
 
 
@@ -36,7 +43,9 @@ def health():
 
 
 @app.post("/upload")
-def upload_file(thread_id: str, file: UploadFile = File(...)):
+def upload_file(
+    thread_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)
+):
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed")
     data = file.file.read()
@@ -81,38 +90,38 @@ class ChatRequest(BaseModel):
     message: str
 
 
-@app.post("/chat")
-def chat(req: ChatRequest):
-    config = {"configurable": {"thread_id": req.thread_id}}
-    logger.info(
-        "chat start thread=%s question_chars=%d", req.thread_id, len(req.message)
-    )
+# @app.post("/chat")
+# def chat(req: ChatRequest):
+#     config = {"configurable": {"thread_id": req.thread_id}}
+#     logger.info(
+#         "chat start thread=%s question_chars=%d", req.thread_id, len(req.message)
+#     )
 
-    def token_stream():
-        start = time.perf_counter()
-        try:
-            events = graph.stream(
-                {"messages": [HumanMessage(content=req.message)]},
-                config=config,
-                stream_mode="messages",
-            )
-            for chunk, meta in events:
-                if (
-                    isinstance(chunk, AIMessageChunk)
-                    and chunk.content
-                    and meta.get("langgraph_node") == "chat"
-                ):
-                    text = extract_text(chunk.content)
-                    if text:
-                        yield text
-        except Exception:
-            logger.exception("chat failed thread=%s", req.thread_id)
-            yield "\n\nSorry, something went wrong. Please try again."
-        finally:
-            logger.info(
-                "chat done thread=%s seconds=%.1f",
-                req.thread_id,
-                time.perf_counter() - start,
-            )
+#     def token_stream():
+#         start = time.perf_counter()
+#         try:
+#             events = graph.stream(
+#                 {"messages": [HumanMessage(content=req.message)]},
+#                 config=config,
+#                 stream_mode="messages",
+#             )
+#             for chunk, meta in events:
+#                 if (
+#                     isinstance(chunk, AIMessageChunk)
+#                     and chunk.content
+#                     and meta.get("langgraph_node") == "chat"
+#                 ):
+#                     text = extract_text(chunk.content)
+#                     if text:
+#                         yield text
+#         except Exception:
+#             logger.exception("chat failed thread=%s", req.thread_id)
+#             yield "\n\nSorry, something went wrong. Please try again."
+#         finally:
+#             logger.info(
+#                 "chat done thread=%s seconds=%.1f",
+#                 req.thread_id,
+#                 time.perf_counter() - start,
+#             )
 
-    return StreamingResponse(token_stream(), media_type="text/plain")
+#     return StreamingResponse(token_stream(), media_type="text/plain")
